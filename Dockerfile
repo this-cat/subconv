@@ -1,4 +1,4 @@
-FROM debian:10
+FROM debian:11
 
 COPY requirements.txt /tmp/requirements.txt
 COPY subconv.py /usr/local/bin/subconv.py
