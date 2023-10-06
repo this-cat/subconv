@@ -14,7 +14,7 @@ docker build -t subconv-image .
 ```
 2. 启动 Docker Container
 ```commandline
-docker run --name subconv -p 8088:8088 -d subconv-image
+docker run -it --name subconv -p 8088:8088 -d subconv-image:latest
 ```
 
 ## 贡献
