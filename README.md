@@ -32,6 +32,10 @@ docker build -t subconv-image .
 ```commandline
 docker run -it -d --restart=always --name subconv -p 8088:8088 subconv-image:latest
 ```
+3. (可选)进入容器
+````
+docker exec -it subconv bash
+````
 
 ## 贡献
 如果您发现任何问题或想要贡献代码，请访问 [GitHub 仓库](https://github.com/this-cat/subconv)。
