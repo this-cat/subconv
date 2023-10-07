@@ -8,7 +8,7 @@ Subconv 是一个订阅转换项目，涉及到两个订阅。第一个订阅将
 
 ## (可选)subconverter 部署
 1. 根据 [subconverter]() 链接的教程进行部署
-2. 比如修改 [subconv.py](https://github.com/this-cat/subconv/blob/master/subconv.py) 中的域名为 0.0.0.0 ↓ 
+2. 比如 [subconv.py](https://github.com/this-cat/subconv/blob/master/subconv.py) 修改为 0.0.0.0:25500 ↓ 
 ```patch
 --- subconv.py	2023-10-06 15:23:13.480000000 +0800
 +++ subconv-b.py	2023-10-07 20:51:12.818742833 +0800
@@ -17,7 +17,7 @@ Subconv 是一个订阅转换项目，涉及到两个订阅。第一个订阅将
  class Subscription:
      def __init__(self, params: str, headers: dict):
 -        self.domain = "api.dler.io"
-+        self.domain = "0.0.0.0"
++        self.domain = "0.0.0.0:25500"
          self.api = f"{self.domain}/sub"
  
          self.params = params
@@ -30,7 +30,7 @@ docker build -t subconv-image .
 ```
 2. 启动 Docker Container
 ```commandline
-docker run -it --name subconv -p 8088:8088 -d subconv-image:latest
+docker run -it -d --restart=always --name subconv -p 8088:8088 subconv-image:latest
 ```
 
 ## 贡献

@@ -128,19 +128,27 @@ class Subscription:
         return str(conf), dict(primary_req.headers)
 
 
+def lowercase_dict_keys(data: dict):
+    return {k.lower(): v for k, v in data.items()}
+
+
 @app.get('/')
 def index(request: Request):
     try:
         sub = Subscription(str(request.query_params), dict(request.headers))
         text, headers = sub.get()
+        headers = lowercase_dict_keys(headers)
         headers["content-type"] = "text/yaml;charset=utf-8"
-        headers.pop("Content-Encoding")     # 删除 Content-Encoding
+        headers["content-length"] = str(len(text))
+
+        # 删除 content-encoding
+        headers.pop("content-encoding", None)
 
         return PlainTextResponse(content=text, media_type="text/yaml", headers=headers)
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"{type(e).__name__}: {e}")
 
 
 if __name__ == '__main__':
