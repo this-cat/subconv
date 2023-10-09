@@ -10,27 +10,53 @@ import yaml
 app = FastAPI()
 
 
+# 在字符串中查找指定目标字符串，然后替换为新的字符串
+def replace_str(original: str, replacement: str, target: str) -> str:
+    """
+    original (str): 原始字符串
+    replacement (str): 要替换为的新字符串
+    target (str): 要查找并替换的目标字符串
+    """
+
+    index = original.find(target)      # 查找目标字符串的索引
+
+    if index != -1:
+        # 使用切片操作，在目标字符串的位置进行替换
+        result_str = original[:index] + replacement + original[index + len(target):]
+    else:
+        result_str = original
+
+    return result_str
+
+
+# 将 dict 的 key 字符串转换为小写
+def lowercase_dict_keys(data: dict):
+    return {k.lower(): v for k, v in data.items()}
+
+
 class Subscription:
     def __init__(self, params: str, headers: dict):
-        self.domain = "api.dler.io"
+        self.domain = "192.168.0.2:25500"
         self.api = f"{self.domain}/sub"
 
         self.params = params
         self.headers = headers
         self.headers["host"] = self.domain
         self.url = f"http://{self.api}?{self.params}"
+        self.parsed_url = urlparse(self.url)                    # 解析 URL
+        self.query_params = parse_qs(self.parsed_url.query)     # 解析参数
+
         self.code: int or None = None
 
     def url_param_replace(self, url_param: str) -> str:
-        parsed_url = urlparse(self.url)
-        query_params = parse_qs(parsed_url.query)
+        query_params = self.query_params.copy()
         query_params["url"] = [url_param]
         encoded_params = urlencode(query_params, doseq=True)
 
         return f"http://{self.api}?{encoded_params}"
 
     @staticmethod
-    def secondary_proxies(secondary: dict, key: str) -> list:
+    def secondary_names(secondary: dict, key: str) -> list:
         secondary_groups = secondary["proxy-groups"]
 
         for group in secondary_groups:
@@ -42,6 +68,38 @@ class Subscription:
 
         # 返回一个空的组
         return []
+
+    def get_emoji_param(self):
+        emoji_param = self.query_params.get("emoji", [])
+
+        if not emoji_param:
+            return True if emoji_param[0].lower() == "true" else False  # 转换为 bool 类型
+        else:
+            return False
+
+    # 向 proxies 组插入字符串
+    def proxies_insert_str(self, secondary: dict, text: str):
+        proxies = secondary.get("proxies")
+
+        for proxie in proxies:
+            name = proxie.get("name", "")
+
+            if self.get_emoji_param():
+                proxie["name"] = replace_str(name, f" {text} ", " ")
+            else:
+                proxie["name"] = f"{text} {name}"
+
+    # 向 names 组插入字符串
+    def group_names_insert_str(self, names: list, text: str):
+        new_names = []
+
+        for name in names:
+            if self.get_emoji_param():
+                new_names.append(replace_str(name, f" {text} ", " "))
+            else:
+                new_names.append(f"{text} {name}")
+
+        return new_names
 
     def join(self, primary: dict, secondary: dict) -> str:
         secondary_proxies = secondary.get("proxies")
@@ -59,24 +117,17 @@ class Subscription:
         for group in groups:
             name = group["name"]
 
-            if name == "Backup":
-                group["proxies"] = self.secondary_proxies(secondary, "Backup")
-            elif name == "Bak_HK":
-                group["proxies"] = self.secondary_proxies(secondary, "Bak_HK")
-            elif name == "Bak_TW":
-                group["proxies"] = self.secondary_proxies(secondary, "Bak_TW")
-            elif name == "Bak_SG":
-                group["proxies"] = self.secondary_proxies(secondary, "Bak_SG")
-            elif name == "Bak_JP":
-                group["proxies"] = self.secondary_proxies(secondary, "Bak_JP")
+            # 匹配 Backup 和 Bak_*
+            if name == "Backup" or "bak_" in name.lower():
+                group["proxies"] = self.group_names_insert_str(
+                    self.secondary_names(secondary, name),
+                    "bak"
+                )
 
         return yaml.dump(primary, default_flow_style=False)
 
     def get(self) -> Tuple[str, dict]:
-        # 解析URL并提取查询参数
-        parsed_url = urlparse(self.url)
-        query_params = parse_qs(parsed_url.query)
-        url_param_value = query_params.get("url", [""])[0]
+        url_param_value = self.query_params.get("url", [""])[0]
 
         # 检查URL参数是否为空
         if url_param_value == "":
@@ -123,17 +174,14 @@ class Subscription:
         # 将YAML字符串解析为Python对象
         primary = yaml.load(primary_req.text, Loader=yaml.FullLoader)
         secondary = yaml.load(secondary_req.text, Loader=yaml.FullLoader)
+        self.proxies_insert_str(secondary, "bak")
         conf = self.join(primary, secondary)
 
         return str(conf), dict(primary_req.headers)
 
 
-def lowercase_dict_keys(data: dict):
-    return {k.lower(): v for k, v in data.items()}
-
-
 @app.get('/')
-def index(request: Request):
+def web(request: Request):
     try:
         sub = Subscription(str(request.query_params), dict(request.headers))
         text, headers = sub.get()
