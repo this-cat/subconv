@@ -73,9 +73,9 @@ class Subscription:
         emoji_param = self.query_params.get("emoji", [])
 
         if not emoji_param:
-            return True if emoji_param[0].lower() == "true" else False  # 转换为 bool 类型
-        else:
             return False
+        else:
+            return True if emoji_param[0].lower() == "true" else False  # 转换为 bool 类型
 
     # 向 proxies 组插入字符串
     def proxies_insert_str(self, secondary: dict, text: str):
