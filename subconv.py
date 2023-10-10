@@ -62,7 +62,7 @@ class Subscription:
         for group in secondary_groups:
             name = group["name"]
 
-            # 找就返回组
+            # 找到就返回组
             if name == key:
                 return group["proxies"]
 
