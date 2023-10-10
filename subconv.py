@@ -1,9 +1,9 @@
 from typing import Tuple
+from urllib.parse import urlparse, urlencode, parse_qs
 
 import requests
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import PlainTextResponse
-from urllib.parse import urlparse, urlencode, parse_qs
 import uvicorn
 import yaml
 
@@ -90,7 +90,7 @@ class Subscription:
                 proxie["name"] = f"{text} {name}"
 
     # 向 names 组插入字符串
-    def group_names_insert_str(self, names: list, text: str):
+    def group_names_insert_str(self, names: list, text: str) -> list:
         new_names = []
 
         for name in names:
@@ -100,6 +100,28 @@ class Subscription:
                 new_names.append(f"{text} {name}")
 
         return new_names
+
+    def merge(self, primary_names: list, secondary_names: list) -> list:
+        diff = [item for item in secondary_names if item not in primary_names]      # 获取差异值
+
+        # 找到差异位置
+        index = 0
+        for primary_name, secondary_name in zip(primary_names[::-1], secondary_names[::-1]):
+            if primary_name != secondary_name:
+                break
+            else:
+                index -= 1
+
+        new_list = primary_names.copy()
+        diff = self.group_names_insert_str(diff, "bak")
+
+        # 合并
+        if index == 0:
+            new_list += diff
+        else:
+            new_list[index:index] = diff
+
+        return new_list
 
     def join(self, primary: dict, secondary: dict) -> str:
         secondary_proxies = secondary.get("proxies")
@@ -115,13 +137,21 @@ class Subscription:
         # 加入 proxy-groups
         groups = primary["proxy-groups"]
         for group in groups:
-            name = group["name"]
+            name = group.get("name", "")
+            type_ = group.get("type", "")
+            proxies = group.get("proxies", [])
 
             # 匹配 Backup 和 Bak_*
             if name == "Backup" or "bak_" in name.lower():
                 group["proxies"] = self.group_names_insert_str(
                     self.secondary_names(secondary, name),
                     "bak"
+                )
+            # 合并
+            elif type_.lower() == "select":
+                group["proxies"] = self.merge(
+                    proxies,
+                    self.secondary_names(secondary, name)
                 )
 
         return yaml.dump(primary, default_flow_style=False)
