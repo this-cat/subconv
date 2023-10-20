@@ -1,7 +1,7 @@
 from typing import Tuple
-from urllib.parse import urlparse, urlencode, parse_qs
+from urllib.parse import urlparse, urlencode, parse_qs, ParseResult
 
-import requests
+from requests import Response, Session
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import PlainTextResponse
 import uvicorn
@@ -36,21 +36,31 @@ def lowercase_dict_keys(data: dict):
 
 class Subscription:
     def __init__(self, params: str, headers: dict):
-        self.domain = "192.168.0.2:25500"
-        self.api = f"{self.domain}/sub"
+        self.domain: str = "www.mywrt.org:25500"
+        self.api: str = f"{self.domain}/sub"
 
         self.params = params
         self.headers = headers
-        self.headers["host"] = self.domain
-        self.url = f"http://{self.api}?{self.params}"
-        self.parsed_url = urlparse(self.url)                    # 解析 URL
-        self.query_params = parse_qs(self.parsed_url.query)     # 解析参数
+        self.headers["host"]: str = self.domain
+        self.url: str = f"http://{self.api}?{self.params}"
+        self.parsed_url: ParseResult = urlparse(self.url)                                       # 解析 URL
+        self.query_params: dict = parse_qs(self.parsed_url.query, keep_blank_values=True)       # 解析参数
 
-        self.code: int or None = None
+        self.session: Session = Session()
+        self.code: int = 200
+
+    @staticmethod
+    def code_ok(code: int) -> bool:
+        return 200 <= code <= 299
 
     def url_param_replace(self, url_param: str) -> str:
         query_params = self.query_params.copy()
         query_params["url"] = [url_param]
+
+        # 默认 udp 参数
+        if query_params.get("udp", ['']) == ['']:
+            query_params["udp"] = ["false"]
+
         encoded_params = urlencode(query_params, doseq=True)
 
         return f"http://{self.api}?{encoded_params}"
@@ -104,7 +114,7 @@ class Subscription:
     def merge(self, primary_names: list, secondary_names: list) -> list:
         diff = [item for item in secondary_names if item not in primary_names]      # 获取差异值
 
-        # 找到差异位置
+        # 找到差异值的插入位置
         index = 0
         for primary_name, secondary_name in zip(primary_names[::-1], secondary_names[::-1]):
             if primary_name != secondary_name:
@@ -113,9 +123,9 @@ class Subscription:
                 index -= 1
 
         new_list = primary_names.copy()
-        diff = self.group_names_insert_str(diff, "bak")
+        diff = self.group_names_insert_str(diff, "bak")     # 在差异值中插入字符串 "bak"
 
-        # 合并
+        # 合并差异值到新列表
         if index == 0:
             new_list += diff
         else:
@@ -156,58 +166,51 @@ class Subscription:
 
         return yaml.dump(primary, default_flow_style=False)
 
+    def req(self, url_param: str, detail: str) -> Response:
+        url = self.url_param_replace(url_param)
+        r = self.session.get(url, headers=self.headers)
+
+        # 检查主要请求的状态码
+        if not self.code_ok(r.status_code):
+            raise HTTPException(status_code=r.status_code, detail=detail)
+
+        return r
+
     def get(self) -> Tuple[str, dict]:
         url_param_value = self.query_params.get("url", [""])[0]
+        url_params = url_param_value.split("|")
 
-        # 检查URL参数是否为空
-        if url_param_value == "":
+        # 如果 URL 参数为空，抛出 HTTP 异常
+        if len(url_params) == 0:
             raise HTTPException(
                 status_code=400,
                 detail="URL parameter is null"
             )
+        # 如果只有一个 URL 参数，发送请求并返回响应内容和响应头
+        elif len(url_params) == 1:
+            req = self.req(url_params[0], "Status code error")
 
-        # 拆分URL参数并检查其长度是否符合要求
-        url_params = url_param_value.split("|")
-        if len(url_params) < 2:
-            raise HTTPException(
-                status_code=400,
-                detail="URL parameter Less than 2"
-            )
+            return req.text, dict(req.headers)
+        # 如果有两个 URL 参数，获取主要和备用订阅的数据
+        elif len(url_params) == 2:
+            # 获取主要和备用订阅的数据
+            primary = self.req(url_params[0], "Primary status code error")
+            secondary = self.req(url_params[1], "Secondary status code error")
 
-        # 分别处理主要和次要参数
-        primary_url_params = url_params[0]
-        secondary_url_params = url_params[1]
-        primary_url = self.url_param_replace(primary_url_params)
-        secondary_url = self.url_param_replace(secondary_url_params)
+            # 解析 YAML 数据
+            primary_yaml = yaml.load(primary.text, Loader=yaml.FullLoader)
+            secondary_yaml = yaml.load(secondary.text, Loader=yaml.FullLoader)
 
-        # 发送主要和次要请求
-        primary_req = requests.get(primary_url, headers=self.headers)
-        secondary_req = requests.get(secondary_url, headers=self.headers)
+            self.proxies_insert_str(secondary_yaml, "bak")  # 在备用数据中插入 "bak" 字段
+            conf = self.join(primary_yaml, secondary_yaml)  # 合并主要和备用数据
 
-        # 检查主要请求的状态码
-        if primary_req.status_code != 200:
-            raise HTTPException(
-                status_code=primary_req.status_code,
-                detail=f"Primary status code error: {primary_req.status_code}"
-            )
+            # 修改内容长度，使其等于合并后数据的长度
+            primary.headers["content-length"] = str(len(conf))
 
-        # 检查次要请求的状态码
-        if secondary_req.status_code != 200:
-            raise HTTPException(
-                status_code=secondary_req.status_code,
-                detail=f"Secondary status code error: {secondary_req.status_code}"
-            )
-
-        # 设置成功的响应信息
-        self.code = 200
-
-        # 将YAML字符串解析为Python对象
-        primary = yaml.load(primary_req.text, Loader=yaml.FullLoader)
-        secondary = yaml.load(secondary_req.text, Loader=yaml.FullLoader)
-        self.proxies_insert_str(secondary, "bak")
-        conf = self.join(primary, secondary)
-
-        return str(conf), dict(primary_req.headers)
+            return str(conf), dict(primary.headers)
+        # 如果 URL 参数数量不符合预期，抛出 HTTP 异常
+        else:
+            raise HTTPException(status_code=400, detail="Too many URL parameters")
 
 
 @app.get('/')
@@ -217,7 +220,6 @@ def web(request: Request):
         text, headers = sub.get()
         headers = lowercase_dict_keys(headers)
         headers["content-type"] = "text/yaml;charset=utf-8"
-        headers["content-length"] = str(len(text))
 
         # 删除 content-encoding
         headers.pop("content-encoding", None)

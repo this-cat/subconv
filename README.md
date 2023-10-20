@@ -1,13 +1,17 @@
-# Subconv(subscription conversion)
+# Subconv([subconverter](https://github.com/tindy2013/subconverter#external-configuration-file))
 
 ## 介绍
-Subconv 是一个订阅转换项目，涉及到两个订阅。第一个订阅将被指定为主节点组，而第二个订阅将用作备用节点组(将第一个订阅配置的 Bak_* 和 Backup 替换掉)。
+Subconv 是一个用于订阅合并的工具。
+它的主要功能是将两个订阅文件合并在一起，其中第一个订阅被视为主要节点组，而第二个订阅将作为备用节点组。
+在合并过程中，第一个订阅中的特定配置项（例如 Bak_* 和 Backup ）将被第二个订阅相应配置所替代。
+如果只存在一个订阅，它将同时充当主要节点组和备用节点组，使用相同的订阅数据。
+这个工具的目的是简化多个订阅的管理，以确保在主要节点组不可用时，能够无缝切换到备用节点组，从而提高可用性和稳定性。
 
 ## 先决条件
 要使用 Subconv，请使用 [template.ini](https://raw.githubusercontent.com/this-cat/clash-template/main/template.ini) 模板以确保正常功能。
 
 ## (可选)subconverter 部署
-1. 根据 [subconverter]() 链接的教程进行部署
+1. 根据 [subconverter](https://github.com/tindy2013/subconverter#external-configuration-file) 链接的教程进行部署
 2. 比如 [subconv.py](https://github.com/this-cat/subconv/blob/master/subconv.py) 修改为 0.0.0.0:25500 ↓ 
 ```patch
 --- subconv.py	2023-10-06 15:23:13.480000000 +0800
